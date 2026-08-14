@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- タブレットでの拡大縮小を防ぎ、アプリのように表示するための設定 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>手書き英単語学習テスト</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background-color: #f4f4f9;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 1.2rem;
+      color: #333;
+    }
+    #canvas-container {
+      margin: 10px auto;
+      touch-action: none; /* タブレットでの意図しないスクロールを防止 */
+    }
+    canvas {
+      background-color: #fff;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      cursor: crosshair;
+    }
+    .btn {
+      padding: 12px 24px;
+      font-size: 1rem;
+      margin: 10px 5px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      color: #fff;
+    }
+    .btn-clear { background-color: #6c757d; }
+    .btn-send { background-color: #007bff; }
+    #result-message {
+      margin-top: 15px;
+      font-weight: bold;
+      color: #28a745;
+    }
+  </style>
+</head>
+<body>
+  <h1>英単語を手書きしてください</h1>
+  <div id="canvas-container">
+    <!-- タブレットで書きやすいサイズに設定 -->
+    <canvas id="draw-area" width="600" height="300"></canvas>
+  </div>
+  <div>
+    <button class="btn btn-clear" id="btn-clear">クリア</button>
+    <button class="btn btn-send" id="btn-send">送信テスト</button>
+  </div>
+  <div id="result-message"></div>
+
+  <script>
+    // 【重要】フェーズ1で取得したGASのウェブアプリURLに書き換えてください
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbykItjdkTJ0ZVpMKhJ44qd0dU8I_70wm8INPPsHOMgjn8A6LniYneZVAkBDQBNvYJw/exec";
+
+    const canvas = document.getElementById('draw-area');
+    const ctx = canvas.getContext('2d');
+    const resultMessage = document.getElementById('result-message');
+
+    let isDrawing = false;
+
+    // ペンの太さと色の設定
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#000";
+
+    // 座標取得関数（マウス・タッチ両対応）
+    const getPos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
+    };
+
+    // 描画イベントの処理
+    const startDrawing = (e) => {
+      isDrawing = true;
+      ctx.beginPath();
+      const { x, y } = getPos(e);
+      ctx.moveTo(x, y);
+      e.preventDefault();
+    };
+
+    const draw = (e) => {
+      if (!isDrawing) return;
+      const { x, y } = getPos(e);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      e.preventDefault();
+    };
+
+    const stopDrawing = () => {
+      isDrawing = false;
+      ctx.closePath();
+    };
+
+    // マウス用のイベントリスナー
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+
+    // タッチデバイス（タブレット）用のイベントリスナー
+    canvas.addEventListener('touchstart', startDrawing, {passive: false});
+    canvas.addEventListener('touchmove', draw, {passive: false});
+    canvas.addEventListener('touchend', stopDrawing);
+
+    // キャンバスをクリア
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      resultMessage.textContent = "";
+    });
+
+    // GASへの送信処理
+    document.getElementById('btn-send').addEventListener('click', async () => {
+      if (GAS_URL === "YOUR_GAS_WEB_APP_URL") {
+        alert("GASのURLが設定されていません。ソースコードを書き換えてください。");
+        return;
+      }
+
+      resultMessage.style.color = "#007bff";
+      resultMessage.textContent = "通信中...";
+
+      // 手書き画像をBase64文字列（テキスト）に変換
+      const base64Image = canvas.toDataURL("image/png");
+
+      // 送信するデータ構造
+      const payload = {
+        wordId: 1,
+        imageBase64: base64Image
+      };
+
+      try {
+        // GASへのPOST送信（GASのCORS仕様によりContent-Typeはtext/plainとする）
+        const response = await fetch(GAS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        
+        // 成功時の処理
+        resultMessage.style.color = "#28a745";
+        resultMessage.textContent = result.message; // 「GASでデータを受信しました！」と表示されます
+
+      } catch (error) {
+        // エラー時の処理
+        resultMessage.style.color = "#dc3545";
+        resultMessage.textContent = "エラー: " + error.message;
+      }
+    });
+  </script>
+</body>
+</html>
