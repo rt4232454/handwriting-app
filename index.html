@@ -2,7 +2,6 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- タブレットでの拡大縮小を防ぎ、アプリのように表示するための設定 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>手書き英単語学習テスト</title>
   <style>
@@ -16,13 +15,20 @@
     h1 {
       font-size: 1.2rem;
       color: #333;
+      margin-bottom: 5px;
+    }
+    /* 出題される日本語訳のスタイル */
+    #question-text {
+      font-size: 1.8rem;
+      color: #0056b3;
+      margin: 10px 0 20px 0;
+      min-height: 2.2rem;
     }
     #canvas-container {
       margin: 10px auto;
-      touch-action: none; /* タブレットでの意図しないスクロールを防止 */
+      touch-action: none;
     }
     canvas {
-      /* 見た目上の背景色（実際の画像データには反映されない） */
       background-color: #fff;
       border: 2px solid #ccc;
       border-radius: 8px;
@@ -37,138 +43,170 @@
       border-radius: 5px;
       cursor: pointer;
       color: #fff;
+      font-weight: bold;
     }
     .btn-clear { background-color: #6c757d; }
     .btn-send { background-color: #007bff; }
+    .btn-next { background-color: #28a745; display: none; } /* 初期状態は非表示 */
+    
     #result-message {
       margin-top: 15px;
+      font-size: 1.2rem;
       font-weight: bold;
-      color: #28a745;
     }
   </style>
 </head>
 <body>
   <h1>英単語を手書きしてください</h1>
+  <!-- ここにGASから取得した日本語訳が表示されます -->
+  <div id="question-text">読み込み中...</div>
+  
   <div id="canvas-container">
-    <!-- タブレットで書きやすいサイズに設定 -->
     <canvas id="draw-area" width="600" height="300"></canvas>
   </div>
   <div>
     <button class="btn btn-clear" id="btn-clear">クリア</button>
-    <button class="btn btn-send" id="btn-send">送信テスト</button>
+    <button class="btn btn-send" id="btn-send">回答を送信</button>
+    <button class="btn btn-next" id="btn-next">次の問題へ ＞</button>
   </div>
   <div id="result-message"></div>
 
   <script>
-    // 【重要】直近で取得した最新のGASのウェブアプリURLに書き換えてください
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbxAW-n7Ak81aBJcQe2Cvs5ToPeaSCDn6BOg5pqBSUtafXvILozTeS_iNYL_c3Utku_i/exec";
+    // 【重要】先ほど新しく発行した「最新のGASのURL」に書き換えてください
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbzfISQ1hQGktPpwUcwQMNrP_gQ59ne0z16OBhQotq53wcfTiFdeJOzv6SWp-3qVibdV/exec";
 
     const canvas = document.getElementById('draw-area');
     const ctx = canvas.getContext('2d');
     const resultMessage = document.getElementById('result-message');
+    const questionText = document.getElementById('question-text');
+    const btnSend = document.getElementById('btn-send');
+    const btnNext = document.getElementById('btn-next');
+    const btnClear = document.getElementById('btn-clear');
 
-    // ====================================================================
-    // ★重要追加：キャンバスの背景データを白で塗りつぶす（AIの認識エラー防止）
-    // ====================================================================
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+    let currentWordId = null; // 現在出題されている単語のIDを保持
     let isDrawing = false;
 
-    // ペンの太さと色の設定
-    ctx.lineWidth = 6;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#000";
+    // キャンバス初期化処理
+    const initCanvas = () => {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#000";
+    };
+    initCanvas();
 
-    // 座標取得関数 (マウス・タッチ両対応)
+    // 座標取得関数
     const getPos = (e) => {
       const rect = canvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      return {
-        x: clientX - rect.left,
-        y: clientY - rect.top
-      };
+      return { x: clientX - rect.left, y: clientY - rect.top };
     };
 
-    // 描画イベントの処理
-    const startDrawing = (e) => {
-      e.preventDefault();
-      isDrawing = true;
-      const pos = getPos(e);
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
-    };
+    // 描画イベント
+    const startDrawing = (e) => { e.preventDefault(); isDrawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); };
+    const draw = (e) => { if (!isDrawing) return; e.preventDefault(); const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); };
+    const stopDrawing = () => { isDrawing = false; ctx.closePath(); };
 
-    const draw = (e) => {
-      if (!isDrawing) return;
-      e.preventDefault();
-      const pos = getPos(e);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.stroke();
-    };
-
-    const stopDrawing = () => {
-      isDrawing = false;
-      ctx.closePath();
-    };
-
-    // マウスイベント
     canvas.addEventListener('mousedown', startDrawing);
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDrawing);
     canvas.addEventListener('mouseout', stopDrawing);
-
-    // タッチイベント
     canvas.addEventListener('touchstart', startDrawing, {passive: false});
     canvas.addEventListener('touchmove', draw, {passive: false});
     canvas.addEventListener('touchend', stopDrawing);
 
-    // クリアボタンの処理
-    document.getElementById('btn-clear').addEventListener('click', () => {
-      // ★修正：clearRectではなく、画面を白で塗りつぶして初期化する
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      resultMessage.innerText = "";
-      resultMessage.style.color = "#333";
+    btnClear.addEventListener('click', () => {
+      initCanvas();
+      if(btnNext.style.display === "none") {
+        resultMessage.innerText = ""; // テスト中のクリアはメッセージを消す
+      }
     });
 
-    // 送信テストボタンの処理
-    document.getElementById('btn-send').addEventListener('click', () => {
-      resultMessage.innerText = "送信中...";
+    // =========================================================
+    // 機能1: GASから次の問題を取得する
+    // =========================================================
+    const loadNextQuestion = () => {
+      resultMessage.innerText = "問題を取得中...";
       resultMessage.style.color = "#333";
+      questionText.innerText = "...";
+      btnNext.style.display = "none";
+      btnSend.style.display = "inline-block";
+      initCanvas();
 
-      // キャンバスの画像をBase64形式で取得
+      fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ action: "get_question" })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if(data.status === "success" && data.question) {
+          currentWordId = data.question.id;
+          questionText.innerText = data.question.ja; // 日本語訳を表示
+          resultMessage.innerText = "";
+        } else if (data.status === "success" && !data.question) {
+          // 今日のノルマが完了した場合
+          questionText.innerText = "🎉 今日のノルマ達成！";
+          resultMessage.style.color = "#28a745";
+          resultMessage.innerText = data.message;
+          btnSend.style.display = "none";
+          btnClear.style.display = "none";
+        } else {
+          resultMessage.style.color = "#dc3545";
+          resultMessage.innerText = "取得エラー: " + data.message;
+        }
+      })
+      .catch(err => {
+        resultMessage.style.color = "#dc3545";
+        resultMessage.innerText = "通信エラー: " + err.message;
+      });
+    };
+
+    // 画面ロード時に最初の問題を取得
+    window.onload = loadNextQuestion;
+    // 「次の問題へ」ボタンを押したときの処理
+    btnNext.addEventListener('click', loadNextQuestion);
+
+    // =========================================================
+    // 機能2: 回答を送信し、正誤判定を受け取る
+    // =========================================================
+    btnSend.addEventListener('click', () => {
+      if(!currentWordId) return;
+
+      resultMessage.innerText = "AIが判定中...";
+      resultMessage.style.color = "#333";
+      btnSend.style.display = "none"; // 連続送信防止
+
       const imageBase64 = canvas.toDataURL("image/png");
-
-      // 送信するデータ（今回はID:1 の zero をテスト送信）
       const payload = {
-        wordId: 1, 
+        action: "submit_answer",
+        wordId: currentWordId,
         imageBase64: imageBase64
       };
 
-      // GASへデータ送信
       fetch(GAS_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "text/plain" // GASのCORS制約を回避するためtext/plain
-        },
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(payload)
       })
-      .then(response => response.json())
+      .then(res => res.json())
       .then(data => {
         if(data.status === "success") {
-          resultMessage.style.color = "#28a745"; // 成功時は緑
+          resultMessage.style.color = data.isCorrect ? "#28a745" : "#dc3545";
           resultMessage.innerText = data.message;
+          btnNext.style.display = "inline-block"; // 「次の問題へ」ボタンを表示
         } else {
-          resultMessage.style.color = "#dc3545"; // 判定エラー時は赤
-          resultMessage.innerText = data.message;
+          resultMessage.style.color = "#dc3545";
+          resultMessage.innerText = "エラー: " + data.message;
+          btnSend.style.display = "inline-block"; // エラー時は送信ボタンを復活
         }
       })
       .catch(error => {
         resultMessage.style.color = "#dc3545";
-        resultMessage.innerText = "通信エラーが発生しました: " + error.message;
+        resultMessage.innerText = "通信エラー: " + error.message;
+        btnSend.style.display = "inline-block";
       });
     });
   </script>
