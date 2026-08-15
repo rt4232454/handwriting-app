@@ -22,6 +22,7 @@
       touch-action: none; /* タブレットでの意図しないスクロールを防止 */
     }
     canvas {
+      /* 見た目上の背景色（実際の画像データには反映されない） */
       background-color: #fff;
       border: 2px solid #ccc;
       border-radius: 8px;
@@ -59,12 +60,18 @@
   <div id="result-message"></div>
 
   <script>
-    // 【重要】フェーズ1で取得したGASのウェブアプリURLに書き換えてください
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbxAW-n7Ak81aBJcQe2Cvs5ToPeaSCDn6BOg5pqBSUtafXvILozTeS_iNYL_c3Utku_i/exec";
+    // 【重要】直近で取得した最新のGASのウェブアプリURLに書き換えてください
+    const GAS_URL = "ここに最新のGASのURLを貼り付けてください";
 
     const canvas = document.getElementById('draw-area');
     const ctx = canvas.getContext('2d');
     const resultMessage = document.getElementById('result-message');
+
+    // ====================================================================
+    // ★重要追加：キャンバスの背景データを白で塗りつぶす（AIの認識エラー防止）
+    // ====================================================================
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     let isDrawing = false;
 
@@ -73,7 +80,7 @@
     ctx.lineCap = "round";
     ctx.strokeStyle = "#000";
 
-    // 座標取得関数（マウス・タッチ両対応）
+    // 座標取得関数 (マウス・タッチ両対応)
     const getPos = (e) => {
       const rect = canvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -86,19 +93,19 @@
 
     // 描画イベントの処理
     const startDrawing = (e) => {
-      isDrawing = true;
-      ctx.beginPath();
-      const { x, y } = getPos(e);
-      ctx.moveTo(x, y);
       e.preventDefault();
+      isDrawing = true;
+      const pos = getPos(e);
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
     };
 
     const draw = (e) => {
       if (!isDrawing) return;
-      const { x, y } = getPos(e);
-      ctx.lineTo(x, y);
-      ctx.stroke();
       e.preventDefault();
+      const pos = getPos(e);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
     };
 
     const stopDrawing = () => {
@@ -106,61 +113,63 @@
       ctx.closePath();
     };
 
-    // マウス用のイベントリスナー
+    // マウスイベント
     canvas.addEventListener('mousedown', startDrawing);
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDrawing);
     canvas.addEventListener('mouseout', stopDrawing);
 
-    // タッチデバイス（タブレット）用のイベントリスナー
+    // タッチイベント
     canvas.addEventListener('touchstart', startDrawing, {passive: false});
     canvas.addEventListener('touchmove', draw, {passive: false});
     canvas.addEventListener('touchend', stopDrawing);
 
-    // キャンバスをクリア
+    // クリアボタンの処理
     document.getElementById('btn-clear').addEventListener('click', () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      resultMessage.textContent = "";
+      // ★修正：clearRectではなく、画面を白で塗りつぶして初期化する
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      resultMessage.innerText = "";
+      resultMessage.style.color = "#333";
     });
 
-    // GASへの送信処理
-    document.getElementById('btn-send').addEventListener('click', async () => {
-      if (GAS_URL === "YOUR_GAS_WEB_APP_URL") {
-        alert("GASのURLが設定されていません。ソースコードを書き換えてください。");
-        return;
-      }
+    // 送信テストボタンの処理
+    document.getElementById('btn-send').addEventListener('click', () => {
+      resultMessage.innerText = "送信中...";
+      resultMessage.style.color = "#333";
 
-      resultMessage.style.color = "#007bff";
-      resultMessage.textContent = "通信中...";
+      // キャンバスの画像をBase64形式で取得
+      const imageBase64 = canvas.toDataURL("image/png");
 
-      // 手書き画像をBase64文字列（テキスト）に変換
-      const base64Image = canvas.toDataURL("image/png");
-
-      // 送信するデータ構造
+      // 送信するデータ（今回はID:1 の zero をテスト送信）
       const payload = {
-        wordId: 1,
-        imageBase64: base64Image
+        wordId: 1, 
+        imageBase64: imageBase64
       };
 
-      try {
-        // GASへのPOST送信（GASのCORS仕様によりContent-Typeはtext/plainとする）
-        const response = await fetch(GAS_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify(payload)
-        });
-        
-        const result = await response.json();
-        
-        // 成功時の処理
-        resultMessage.style.color = "#28a745";
-        resultMessage.textContent = result.message; // 「GASでデータを受信しました！」と表示されます
-
-      } catch (error) {
-        // エラー時の処理
+      // GASへデータ送信
+      fetch(GAS_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain" // GASのCORS制約を回避するためtext/plain
+        },
+        body: JSON.stringify(payload)
+      })
+      .then(response => response.json())
+      .then(data => {
+        if(data.status === "success") {
+          resultMessage.style.color = "#28a745"; // 成功時は緑
+          resultMessage.innerText = data.message;
+        } else {
+          resultMessage.style.color = "#dc3545"; // 判定エラー時は赤
+          resultMessage.innerText = data.message;
+        }
+      })
+      .catch(error => {
         resultMessage.style.color = "#dc3545";
-        resultMessage.textContent = "エラー: " + error.message;
-      }
+        resultMessage.innerText = "通信エラーが発生しました: " + error.message;
+      });
     });
   </script>
 </body>
