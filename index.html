@@ -20,7 +20,6 @@
     .btn { padding: 12px 20px; font-size: 1rem; border: none; border-radius: 5px; cursor: pointer; color: #fff; font-weight: bold; flex-grow: 1; }
     .btn-clear { background-color: #6c757d; flex-grow: 0; }
     .btn-send { background-color: #007bff; }
-    /* 「読んで！」ボタンのデザイン変更 */
     .btn-read { background-color: #17a2b8; color: #fff; }
     .btn-next { background-color: #28a745; display: none; width: 100%; margin-top: 10px; }
     #result-message { margin-top: 15px; font-size: 1.1rem; font-weight: bold; white-space: pre-wrap; }
@@ -28,6 +27,7 @@
 </head>
 <body>
 
+  <!-- ログイン画面 -->
   <div id="login-screen">
     <h2>名前を選んでね</h2>
     <button class="user-btn" onclick="login('のぞみち')">のぞみち</button>
@@ -37,6 +37,7 @@
     <button class="user-btn" onclick="login('じゅんみち')">じゅんみち</button>
   </div>
 
+  <!-- アプリ画面 -->
   <div id="app-screen">
     <div id="status-bar">
       <span id="display-name">名前</span>
@@ -65,7 +66,7 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzFo01HmF_3sX5L5-lXy4K95dXoU-IoJVTGmwYNENofwru8NN1y5gzXMOdbxNpNHeoE/exec";
     let currentUser = "";
     let currentWordId = null;
-    let currentSpeechText = ""; // 読み上げるテキストを記憶する変数
+    let currentSpeechText = "";
 
     function login(name) {
       currentUser = name;
@@ -83,10 +84,24 @@
     const btnRead = document.getElementById('btn-read');
     const btnNext = document.getElementById('btn-next');
 
+    // キャンバス描画設定
     let isDrawing = false;
-    const initCanvas = () => { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.strokeStyle = "#000"; };
+    const initCanvas = () => {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#000";
+    };
     initCanvas();
-    const getPos = (e) => { const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; return { x: clientX - rect.left, y: clientY - rect.top }; };
+
+    const getPos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    };
+
     canvas.addEventListener('mousedown', (e) => { e.preventDefault(); isDrawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); });
     canvas.addEventListener('mousemove', (e) => { if (!isDrawing) return; e.preventDefault(); const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); });
     canvas.addEventListener('mouseup', () => { isDrawing = false; ctx.closePath(); });
@@ -94,43 +109,51 @@
     canvas.addEventListener('touchstart', (e) => { e.preventDefault(); isDrawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); }, {passive: false});
     canvas.addEventListener('touchmove', (e) => { if (!isDrawing) return; e.preventDefault(); const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); }, {passive: false});
     canvas.addEventListener('touchend', () => { isDrawing = false; ctx.closePath(); });
-    document.getElementById('btn-clear').addEventListener('click', () => { initCanvas(); if(btnNext.style.display === "none") resultMessage.innerText = ""; });
+    document.getElementById('btn-clear').addEventListener('click', () => { initCanvas(); if (btnNext.style.display === "none") resultMessage.innerText = ""; });
 
+    // ステータス更新
     const updateStats = (stats) => {
-      if(stats) {
+      if (stats) {
         document.getElementById('display-level').innerText = stats.level;
         document.getElementById('display-exp').innerText = stats.exp;
         document.getElementById('display-streak').innerText = stats.streak;
       }
     };
 
+    // 問題取得
     const loadNextQuestion = () => {
-      resultMessage.innerText = "通信中..."; resultMessage.style.color = "#333";
+      resultMessage.innerText = "通信中...";
+      resultMessage.style.color = "#333";
       questionText.innerText = "...";
-      btnNext.style.display = "none"; btnSend.disabled = false; btnRead.disabled = false; initCanvas();
+      btnNext.style.display = "none";
+      btnSend.disabled = false;
+      btnRead.disabled = false;
+      initCanvas();
       currentSpeechText = "";
 
-      fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ action: "get_question", userName: currentUser }) })
+      fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ action: "get_question", userName: currentUser })
+      })
       .then(res => res.json())
       .then(data => {
-        if(data.status === "success" && data.question) {
+        if (data.status === "success" && data.question) {
           updateStats(data.stats);
           currentWordId = data.question.id;
           let qHTML = data.question.ja;
           
-          // 読み上げテキストの構築ロジック
           currentSpeechText = data.question.ans;
-          if(data.question.en) {
+          if (data.question.en) {
             const formattedEn = data.question.en.replace(/___/g, '<span style="color: #ff9800; font-weight: bold; font-size: 1.2em;">[  ]</span>');
             qHTML += "<br><span style='font-size: 0.9em; color: #555; display: inline-block; margin-top: 5px;'>" + formattedEn + "</span>";
             
-            // 穴埋め問題の場合、正解を自動ではめ込んでから読み上げるようにする
             let cleanAns = data.question.ans.replace(/\[.*?\]|\(.*?\)/g, "").trim();
             let ansParts = cleanAns.split(/\s+/);
             let qParts = data.question.en.split("___");
             currentSpeechText = qParts[0];
-            for(let i = 1; i < qParts.length; i++) {
-              currentSpeechText += (ansParts[i-1] || "") + qParts[i];
+            for (let i = 1; i < qParts.length; i++) {
+              currentSpeechText += (ansParts[i - 1] || "") + qParts[i];
             }
           }
           
@@ -139,38 +162,72 @@
         } else if (data.status === "success" && !data.question) {
           updateStats(data.stats);
           questionText.innerHTML = "🎉 今日のクエスト完了！";
-          resultMessage.style.color = "#28a745"; resultMessage.innerText = data.message;
-          btnSend.style.display = "none"; btnRead.style.display = "none"; document.getElementById('btn-clear').style.display = "none";
+          resultMessage.style.color = "#28a745";
+          resultMessage.innerText = data.message;
+          btnSend.style.display = "none";
+          btnRead.style.display = "none";
+          document.getElementById('btn-clear').style.display = "none";
         }
       });
     };
     btnNext.addEventListener('click', loadNextQuestion);
 
+    // 回答判定
     const handleResult = (data) => {
-      if(data.status === "success") {
-        resultMessage.style.color = data.isCorrect ? "#28a745" : "#dc3545"; resultMessage.innerText = data.message;
+      if (data.status === "success") {
+        resultMessage.style.color = data.isCorrect ? "#28a745" : "#dc3545";
+        resultMessage.innerText = data.message;
         btnNext.style.display = "inline-block";
       }
-      btnSend.disabled = false; btnRead.disabled = false;
+      btnSend.disabled = false;
+      btnRead.disabled = false;
     };
 
     btnSend.addEventListener('click', () => {
-      if(!currentWordId) return;
-      resultMessage.innerText = "AIが判定中..."; resultMessage.style.color = "#333";
-      btnSend.disabled = true; btnRead.disabled = true;
-      fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ action: "submit_answer", userName: currentUser, wordId: currentWordId, imageBase64: canvas.toDataURL("image/png") }) })
-      .then(res => res.json()).then(handleResult);
+      if (!currentWordId) return;
+      resultMessage.innerText = "AIが判定中...";
+      resultMessage.style.color = "#333";
+      btnSend.disabled = true;
+      btnRead.disabled = true;
+      fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: "submit_answer",
+          userName: currentUser,
+          wordId: currentWordId,
+          imageBase64: canvas.toDataURL("image/png")
+        })
+      })
+      .then(res => res.json())
+      .then(handleResult);
     });
 
-    // 「読んで！」ボタンの音声合成（読み上げ）処理
+    // iPad・ブラウザ音声最適化
+    let englishVoices = [];
+    function loadVoices() {
+      const voices = window.speechSynthesis.getVoices();
+      englishVoices = voices.filter(voice => voice.lang.includes('en-'));
+    }
+    
+    loadVoices();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
     btnRead.addEventListener('click', () => {
-      if(!currentSpeechText) return;
-      // 万が一前の音声が残っていたらキャンセル
+      if (!currentSpeechText) return;
       window.speechSynthesis.cancel();
       
       const utterance = new SpeechSynthesisUtterance(currentSpeechText);
       utterance.lang = 'en-US';
-      utterance.rate = 0.85; // お子様が聞き取りやすいよう、少しゆっくりめのスピード
+      utterance.rate = 0.85;
+      
+      if (englishVoices.length > 0) {
+        const preferredVoice = englishVoices.find(voice => voice.lang === 'en-US') || englishVoices[0];
+        utterance.voice = preferredVoice;
+      }
+      
       window.speechSynthesis.speak(utterance);
     });
   </script>
