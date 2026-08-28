@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { font-family: sans-serif; text-align: center; background-color: #f4f4f9; margin: 0; padding: 12px; }
-    #login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
+    #login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; }
     .user-btn { width: 80%; max-width: 300px; padding: 15px; margin: 10px; font-size: 1.2rem; background-color: #6f42c1; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     #app-screen { display: none; }
     
@@ -49,11 +49,11 @@
 
   <div id="login-screen">
     <h2>名前を選んでね</h2>
-    <button class="user-btn" onclick="login('のぞみち')">のぞみち</button>
-    <button class="user-btn" onclick="login('ゆいみち')">ゆいみち</button>
-    <button class="user-btn" onclick="login('まこみち')">まこみち</button>
-    <button class="user-btn" onclick="login('ちえみち')">ちえみち</button>
-    <button class="user-btn" onclick="login('じゅんみち')">じゅんみち</button>
+    <button class="user-btn" data-user="のぞみち">のぞみち</button>
+    <button class="user-btn" data-user="ゆいみち">ゆいみち</button>
+    <button class="user-btn" data-user="まこみち">まこみち</button>
+    <button class="user-btn" data-user="ちえみち">ちえみち</button>
+    <button class="user-btn" data-user="じゅんみち">じゅんみち</button>
   </div>
 
   <div id="app-screen">
@@ -115,7 +115,15 @@
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
-    let isShowingAnswer = false; // 答え表示中フラグ（カンニング防止）
+    let isShowingAnswer = false;
+
+    // ユーザー選択ボタンのイベントリスナー設定
+    document.querySelectorAll('.user-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const userName = btn.getAttribute('data-user');
+        login(userName);
+      });
+    });
 
     function login(name) {
       currentUser = name;
@@ -220,8 +228,12 @@
           resultMessage.innerText = "";
         } else if (data.status === "success" && !data.question) {
           updateUIElements(data.stats, data.levelCounts, data.targetProgress);
-          showFinishScreen(data.levelCounts.mastered);
+          showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0);
         }
+      })
+      .catch(err => {
+        resultMessage.innerText = "通信エラーが発生しました。GASのURLを確認してください。";
+        resultMessage.style.color = "#dc3545";
       });
     };
     btnNext.addEventListener('click', loadNextQuestion);
@@ -233,7 +245,7 @@
         btnNext.style.display = "inline-block";
         if (!data.isCorrect) {
           isShowingAnswer = true;
-          btnSend.disabled = true; // 誤答時は答えが表示されるため「書いた！」をロック
+          btnSend.disabled = true;
         }
       }
     };
@@ -255,21 +267,22 @@
         })
       })
       .then(res => res.json())
-      .then(handleResult);
+      .then(handleResult)
+      .catch(err => {
+        resultMessage.innerText = "判定通信に失敗しました。";
+        btnSend.disabled = false;
+        btnRead.disabled = false;
+      });
     });
 
-    // 2026年11月30日ゴール進捗グラフの描画
     function showFinishScreen(currentMasteredCount) {
       document.getElementById('quiz-area').style.display = 'none';
       document.getElementById('finish-screen').style.display = 'block';
 
+      if (typeof Chart === 'undefined') return;
+
       const ctxChart = document.getElementById('progressChart').getContext('2d');
-      
       const totalWords = 1800;
-      const targetDate = new Date(2026, 10, 30); // 2026年11月30日
-      const today = new Date();
-      
-      // 日付ラベルの生成
       const labels = ["開始", "現在", "9月末", "10月末", "11/30 (ゴール)"];
       const idealPace = [0, Math.round(totalWords * 0.1), Math.round(totalWords * 0.35), Math.round(totalWords * 0.7), totalWords];
       const actualPace = [0, currentMasteredCount, null, null, null];
@@ -310,7 +323,6 @@
       });
     }
 
-    // 音声読み上げ
     let englishVoices = [];
     function loadVoices() {
       const voices = window.speechSynthesis.getVoices();
