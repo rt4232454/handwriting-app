@@ -28,7 +28,16 @@
     .progress-bar-bg { background-color: #e9ecef; border-radius: 6px; height: 12px; overflow: hidden; margin-top: 6px; }
     .progress-bar-fill { background-color: #28a745; height: 100%; width: 0%; transition: width 0.4s ease; }
     
-    #question-text { font-size: 1.4rem; color: #0056b3; margin: 8px 0; min-height: 2.6rem; }
+    /* 出題中の単語ステータスバッジ */
+    #word-status-container { margin-top: 10px; margin-bottom: 4px; }
+    .word-badge { display: inline-block; padding: 3px 10px; font-size: 0.8rem; font-weight: bold; border-radius: 20px; }
+    .word-badge-new { background-color: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .word-badge-missed { background-color: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+    .word-badge-lv1 { background-color: #e1f5fe; color: #0277bd; border: 1px solid #81d4fa; }
+    .word-badge-lv2 { background-color: #e0f2f1; color: #00695c; border: 1px solid #80cbc4; }
+    .word-badge-lv3 { background-color: #fff8e1; color: #f57f17; border: 1px solid #ffe082; }
+
+    #question-text { font-size: 1.4rem; color: #0056b3; margin: 4px 0 8px 0; min-height: 2.6rem; }
     #canvas-container { margin: 6px auto; touch-action: none; }
     canvas { background-color: #fff; border: 2px solid #ccc; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     
@@ -84,7 +93,12 @@
     </div>
     
     <div id="quiz-area">
-      <div id="question-text">読み込み中...</div>
+      <!-- 単語ステータスバッジ -->
+      <div id="word-status-container">
+        <span id="word-badge" class="word-badge">読み込み中...</span>
+      </div>
+
+      <div id="question-text">...</div>
       
       <div id="canvas-container">
         <canvas id="draw-area" width="600" height="280"></canvas>
@@ -111,13 +125,12 @@
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbyk0NBshSy38uwgmCVuIp3NSwCX-MSPSd5bN-iuNQ_ZErEcfQfxA5d2aVQmE74DpyhZ/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbyUbCHoB5fdBIXbKIx-CQex7DKIh-3c3CEMM_2eD3zK386kDEZAyHLwNl4wcZMxb70y/exec";
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
     let isShowingAnswer = false;
 
-    // ユーザー選択ボタンのイベントリスナー設定
     document.querySelectorAll('.user-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const userName = btn.getAttribute('data-user');
@@ -137,6 +150,7 @@
     const ctx = canvas.getContext('2d');
     const resultMessage = document.getElementById('result-message');
     const questionText = document.getElementById('question-text');
+    const wordBadge = document.getElementById('word-badge');
     const btnSend = document.getElementById('btn-send');
     const btnRead = document.getElementById('btn-read');
     const btnNext = document.getElementById('btn-next');
@@ -187,11 +201,33 @@
       }
     };
 
+    // 単語ステータスバッジの更新
+    const updateWordBadge = (question) => {
+      wordBadge.className = 'word-badge';
+      if (question.isMissed) {
+        wordBadge.classList.add('word-badge-missed');
+        wordBadge.innerText = '⚡ 苦手克服（直近ミスした単語）';
+      } else if (question.level === 0) {
+        wordBadge.classList.add('word-badge-new');
+        wordBadge.innerText = '🌱 NEW（新規単語）';
+      } else if (question.level === 1) {
+        wordBadge.classList.add('word-badge-lv1');
+        wordBadge.innerText = '📘 Lv.1 復習（あと3回でマスター）';
+      } else if (question.level === 2) {
+        wordBadge.classList.add('word-badge-lv2');
+        wordBadge.innerText = '📙 Lv.2 復習（あと2回でマスター）';
+      } else if (question.level === 3) {
+        wordBadge.classList.add('word-badge-lv3');
+        wordBadge.innerText = '🔥 Lv.3 復習（王手！次でマスター）';
+      }
+    };
+
     const loadNextQuestion = () => {
       isShowingAnswer = false;
       resultMessage.innerText = "通信中...";
       resultMessage.style.color = "#333";
       questionText.innerText = "...";
+      wordBadge.innerText = "問題取得中...";
       btnNext.style.display = "none";
       btnSend.disabled = false;
       btnRead.disabled = false;
@@ -207,6 +243,7 @@
       .then(data => {
         if (data.status === "success" && data.question) {
           updateUIElements(data.stats, data.levelCounts, data.targetProgress);
+          updateWordBadge(data.question);
           currentWordId = data.question.id;
           let qHTML = data.question.ja;
           
