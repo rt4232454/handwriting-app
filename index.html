@@ -52,6 +52,9 @@
     /* 学習完了画面・グラフ */
     #finish-screen { display: none; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-top: 15px; }
     #chart-container { max-width: 600px; margin: 15px auto; }
+    .finish-actions { display: flex; justify-content: center; gap: 12px; margin-top: 15px; flex-wrap: wrap; }
+    .btn-more { background-color: #fd7e14; color: white; padding: 12px 24px; font-size: 1.1rem; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    .btn-exit { background-color: #6c757d; color: white; padding: 12px 24px; font-size: 1.1rem; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -116,20 +119,27 @@
 
     <!-- 学習完了画面 & グラフ -->
     <div id="finish-screen">
-      <h2 style="color: #28a745;">🎉 本日のクエスト完了！</h2>
-      <p id="finish-msg">今日の目標をすべて達成しました！</p>
+      <h2 style="color: #28a745;" id="finish-title">🎉 本日のクエスト達成！</h2>
+      <p id="finish-msg" style="font-size: 1.1rem; font-weight: bold; color: #333;">今日の目標（20問）を見事にクリアしました！</p>
+      
       <div id="chart-container">
         <canvas id="progressChart"></canvas>
+      </div>
+
+      <div class="finish-actions">
+        <button class="btn-exit" id="btn-finish-exit">おしまい</button>
+        <button class="btn-more" id="btn-finish-more">🔥 おかわり！もう20問挑戦する</button>
       </div>
     </div>
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbyUbCHoB5fdBIXbKIx-CQex7DKIh-3c3CEMM_2eD3zK386kDEZAyHLwNl4wcZMxb70y/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbz4UuS_KAPxSNQyfgrcDCbvy9Zf9C2I7Ry6lyHdq4Igt4mH3ADu5aDe_MZ0310Hr_4A/exec";
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
     let isShowingAnswer = false;
+    let sessionOffset = 0; // おかわり時の基準オフセット
 
     document.querySelectorAll('.user-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -140,6 +150,7 @@
 
     function login(name) {
       currentUser = name;
+      sessionOffset = 0;
       document.getElementById('display-name').innerText = name;
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('app-screen').style.display = 'block';
@@ -201,7 +212,6 @@
       }
     };
 
-    // 単語ステータスバッジの更新
     const updateWordBadge = (question) => {
       wordBadge.className = 'word-badge';
       if (question.isMissed) {
@@ -237,7 +247,7 @@
       fetch(GAS_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({ action: "get_question", userName: currentUser })
+        body: JSON.stringify({ action: "get_question", userName: currentUser, sessionOffset: sessionOffset })
       })
       .then(res => res.json())
       .then(data => {
@@ -265,7 +275,7 @@
           resultMessage.innerText = "";
         } else if (data.status === "success" && !data.question) {
           updateUIElements(data.stats, data.levelCounts, data.targetProgress);
-          showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0);
+          showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0, data.isDailyLimitReached);
         }
       })
       .catch(err => {
@@ -312,19 +322,28 @@
       });
     });
 
-    function showFinishScreen(currentMasteredCount) {
+    let chartInstance = null;
+    function showFinishScreen(currentMasteredCount, isDailyLimitReached) {
       document.getElementById('quiz-area').style.display = 'none';
       document.getElementById('finish-screen').style.display = 'block';
+
+      if (isDailyLimitReached) {
+        document.getElementById('btn-finish-more').style.display = 'none';
+      } else {
+        document.getElementById('btn-finish-more').style.display = 'inline-block';
+      }
 
       if (typeof Chart === 'undefined') return;
 
       const ctxChart = document.getElementById('progressChart').getContext('2d');
       const totalWords = 1800;
-      const labels = ["開始", "現在", "9月末", "10月末", "11/30 (ゴール)"];
-      const idealPace = [0, Math.round(totalWords * 0.1), Math.round(totalWords * 0.35), Math.round(totalWords * 0.7), totalWords];
-      const actualPace = [0, currentMasteredCount, null, null, null];
+      const labels = ["8月", "9月末", "10月末", "11/30 (ゴール)"];
+      const idealPace = [0, 600, 1200, 1800];
+      const actualPace = [currentMasteredCount, null, null, null];
 
-      new Chart(ctxChart, {
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctxChart, {
         type: 'line',
         data: {
           labels: labels,
@@ -359,6 +378,22 @@
         }
       });
     }
+
+    // 「おかわり！」ボタン押下時の処理
+    document.getElementById('btn-finish-more').addEventListener('click', () => {
+      sessionOffset += 20; // 次の20問へオフセットを加算
+      document.getElementById('finish-screen').style.display = 'none';
+      document.getElementById('quiz-area').style.display = 'block';
+      loadNextQuestion();
+    });
+
+    // 「おしまい」ボタン押下時の処理
+    document.getElementById('btn-finish-exit').addEventListener('click', () => {
+      document.getElementById('app-screen').style.display = 'none';
+      document.getElementById('finish-screen').style.display = 'none';
+      document.getElementById('quiz-area').style.display = 'block';
+      document.getElementById('login-screen').style.display = 'flex';
+    });
 
     let englishVoices = [];
     function loadVoices() {
