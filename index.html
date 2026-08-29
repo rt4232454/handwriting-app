@@ -133,12 +133,12 @@
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbxPyfdwHg3xe2lqWGFXX3RXuPC3BFrub61iQ8JqfbAdmknRpCYfnubbqFzbZSg6xinF/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxPyfdwHg3xe2lqWGFXX3RXuPC3BFrub61iQ8JqfbAdmknRpCYfnubbqFzbZSg6xinF/exec"; // 最新のGAS URLを設定してください
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
     let isShowingAnswer = false;
-    let sessionCorrectCount = 0; // 現在のセッション（20問）の正解数
+    let sessionCorrectCount = 0;
     let latestMasteredCount = 0;
 
     document.querySelectorAll('.user-btn').forEach(btn => {
@@ -237,7 +237,6 @@
     };
 
     const loadNextQuestion = () => {
-      // 画面側で20問に達している場合は完了画面を表示
       if (sessionCorrectCount >= 20) {
         showFinishScreen(latestMasteredCount);
         return;
@@ -346,7 +345,21 @@
       if (typeof Chart === 'undefined') return;
 
       const ctxChart = document.getElementById('progressChart').getContext('2d');
-      const totalWords = 1800;
+      
+      // 段階的スケール（現在のマスター数に応じて上限を自動調整）
+      let maxScale = 100;
+      if (currentMasteredCount > 600) {
+        maxScale = 1800;
+      } else if (currentMasteredCount > 300) {
+        maxScale = 600;
+      } else if (currentMasteredCount > 100) {
+        maxScale = 300;
+      } else if (currentMasteredCount > 50) {
+        maxScale = 100;
+      } else {
+        maxScale = 50; // 50語未満のときは最大50語スケールで変化を大きく見せる
+      }
+
       const labels = ["8月", "9月末", "10月末", "11/30 (ゴール)"];
       const idealPace = [0, 600, 1200, 1800];
       const actualPace = [currentMasteredCount, null, null, null];
@@ -363,33 +376,46 @@
               data: idealPace,
               borderColor: '#6c757d',
               borderDash: [5, 5],
-              fill: false
+              fill: false,
+              pointRadius: 4
             },
             {
-              label: '🏆 実際のマスター数',
+              label: `🏆 現在のマスター (${currentMasteredCount}語)`,
               data: actualPace,
               borderColor: '#ffb703',
-              backgroundColor: 'rgba(255, 183, 3, 0.2)',
+              backgroundColor: 'rgba(255, 183, 3, 0.25)',
               borderWidth: 3,
               fill: true,
-              pointRadius: 6
+              pointRadius: 8,
+              pointHoverRadius: 10
             }
           ]
         },
         options: {
           responsive: true,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return context.dataset.label;
+                }
+              }
+            }
+          },
           scales: {
             y: {
               beginAtZero: true,
-              max: totalWords,
-              title: { display: true, text: 'マスター単語数' }
+              max: maxScale,
+              title: { 
+                display: true, 
+                text: `マスター単語数 (段階スケール: 最大${maxScale}語)` 
+              }
             }
           }
         }
       });
     }
 
-    // 「おかわり！」ボタン：カウントを0にリセットして次の20問へ即座に開始
     document.getElementById('btn-finish-more').addEventListener('click', () => {
       sessionCorrectCount = 0;
       updateSessionProgressUI();
@@ -398,7 +424,6 @@
       loadNextQuestion();
     });
 
-    // 「おしまい」ボタン：ログイン画面に戻る
     document.getElementById('btn-finish-exit').addEventListener('click', () => {
       document.getElementById('app-screen').style.display = 'none';
       document.getElementById('finish-screen').style.display = 'none';
