@@ -15,7 +15,7 @@
     
     /* レベル別単語数バッジ */
     #level-badges { display: flex; justify-content: center; gap: 6px; margin: 8px 0; font-size: 0.75rem; flex-wrap: wrap; }
-    .badge { padding: 4px 8px; border-radius: 12px; font-weight: bold; color: white; }
+    .badge { padding: 4px 8px; border-radius: 12px; font-weight: bold; color: white; transition: transform 0.2s ease; }
     .badge-unlearned { background-color: #8e9aaf; }
     .badge-lv1 { background-color: #48cae4; }
     .badge-lv2 { background-color: #0096c7; }
@@ -77,11 +77,11 @@
 
     <!-- レベル別単語数バッジ -->
     <div id="level-badges">
-      <span class="badge badge-unlearned">未着手: <span id="count-unlearned">0</span></span>
-      <span class="badge badge-lv1">Lv.1: <span id="count-lv1">0</span></span>
-      <span class="badge badge-lv2">Lv.2: <span id="count-lv2">0</span></span>
-      <span class="badge badge-lv3">Lv.3: <span id="count-lv3">0</span></span>
-      <span class="badge badge-master">🏆マスター: <span id="count-mastered">0</span></span>
+      <span class="badge badge-unlearned" id="badge-unlearned-container">未着手: <span id="count-unlearned">0</span></span>
+      <span class="badge badge-lv1" id="badge-lv1-container">Lv.1: <span id="count-lv1">0</span></span>
+      <span class="badge badge-lv2" id="badge-lv2-container">Lv.2: <span id="count-lv2">0</span></span>
+      <span class="badge badge-lv3" id="badge-lv3-container">Lv.3: <span id="count-lv3">0</span></span>
+      <span class="badge badge-master" id="badge-master-container">🏆マスター: <span id="count-mastered">0</span></span>
     </div>
 
     <!-- 20問目標プログレスバー -->
@@ -133,7 +133,7 @@
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbxPyfdwHg3xe2lqWGFXX3RXuPC3BFrub61iQ8JqfbAdmknRpCYfnubbqFzbZSg6xinF/exec"; // 最新のGAS URLを設定してください
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbw1OSCjQ60o1_vwiiT7jG8bVnGrMiLwMRTNNNafJdU14EIc66teJn4L_DTE_65EWvUu/exec";
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
@@ -300,6 +300,11 @@
         resultMessage.innerText = data.message;
         btnNext.style.display = "inline-block";
 
+        // ★正解・不正解にかかわらず、ここで即座に上部のステータス（レベル別単語数・EXPなど）を更新！
+        if (data.stats || data.levelCounts) {
+          updateUIElements(data.stats, data.levelCounts);
+        }
+
         if (data.isCorrect && data.isTargetWord) {
           sessionCorrectCount++;
           updateSessionProgressUI();
@@ -346,7 +351,6 @@
 
       const ctxChart = document.getElementById('progressChart').getContext('2d');
       
-      // 段階的スケール（現在のマスター数に応じて上限を自動調整）
       let maxScale = 100;
       if (currentMasteredCount > 600) {
         maxScale = 1800;
@@ -357,7 +361,7 @@
       } else if (currentMasteredCount > 50) {
         maxScale = 100;
       } else {
-        maxScale = 50; // 50語未満のときは最大50語スケールで変化を大きく見せる
+        maxScale = 50; 
       }
 
       const labels = ["8月", "9月末", "10月末", "11/30 (ゴール)"];
