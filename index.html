@@ -96,7 +96,6 @@
     </div>
     
     <div id="quiz-area">
-      <!-- 単語ステータスバッジ -->
       <div id="word-status-container">
         <span id="word-badge" class="word-badge">読み込み中...</span>
       </div>
@@ -134,12 +133,13 @@
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbxfj4U1jQXFJfH_NKqy8ZVqf8WmKiRD82Cw7voZW8rIY4Zfvab3-W5ES92H2Fay-xU/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxPyfdwHg3xe2lqWGFXX3RXuPC3BFrub61iQ8JqfbAdmknRpCYfnubbqFzbZSg6xinF/exec";
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
     let isShowingAnswer = false;
-    let sessionOffset = 0; // おかわり時の基準オフセット
+    let sessionCorrectCount = 0; // 現在のセッション（20問）の正解数
+    let latestMasteredCount = 0;
 
     document.querySelectorAll('.user-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -150,10 +150,13 @@
 
     function login(name) {
       currentUser = name;
-      sessionOffset = 0;
+      sessionCorrectCount = 0;
+      updateSessionProgressUI();
       document.getElementById('display-name').innerText = name;
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('app-screen').style.display = 'block';
+      document.getElementById('finish-screen').style.display = 'none';
+      document.getElementById('quiz-area').style.display = 'block';
       loadNextQuestion();
     }
 
@@ -192,23 +195,24 @@
     canvas.addEventListener('touchend', () => { isDrawing = false; ctx.closePath(); });
     document.getElementById('btn-clear').addEventListener('click', () => { initCanvas(); if (!isShowingAnswer) resultMessage.innerText = ""; });
 
-    const updateUIElements = (stats, levelCounts, targetProgress) => {
+    function updateSessionProgressUI() {
+      document.getElementById('target-count-text').innerText = `${sessionCorrectCount} / 20 語`;
+      document.getElementById('target-progress-fill').style.width = `${(sessionCorrectCount / 20) * 100}%`;
+    }
+
+    const updateUIElements = (stats, levelCounts) => {
       if (stats) {
         document.getElementById('display-level').innerText = stats.level;
         document.getElementById('display-exp').innerText = stats.exp;
         document.getElementById('display-streak').innerText = stats.streak;
       }
       if (levelCounts) {
+        latestMasteredCount = levelCounts.mastered;
         document.getElementById('count-unlearned').innerText = levelCounts.unlearned;
         document.getElementById('count-lv1').innerText = levelCounts.lv1;
         document.getElementById('count-lv2').innerText = levelCounts.lv2;
         document.getElementById('count-lv3').innerText = levelCounts.lv3;
         document.getElementById('count-mastered').innerText = levelCounts.mastered;
-      }
-      if (targetProgress) {
-        document.getElementById('target-count-text').innerText = `${targetProgress.current} / ${targetProgress.target} 語`;
-        const percentage = Math.min(100, Math.round((targetProgress.current / targetProgress.target) * 100));
-        document.getElementById('target-progress-fill').style.width = percentage + "%";
       }
     };
 
@@ -233,6 +237,12 @@
     };
 
     const loadNextQuestion = () => {
+      // 画面側で20問に達している場合は完了画面を表示
+      if (sessionCorrectCount >= 20) {
+        showFinishScreen(latestMasteredCount);
+        return;
+      }
+
       isShowingAnswer = false;
       resultMessage.innerText = "通信中...";
       resultMessage.style.color = "#333";
@@ -247,12 +257,12 @@
       fetch(GAS_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({ action: "get_question", userName: currentUser, sessionOffset: sessionOffset })
+        body: JSON.stringify({ action: "get_question", userName: currentUser })
       })
       .then(res => res.json())
       .then(data => {
         if (data.status === "success" && data.question) {
-          updateUIElements(data.stats, data.levelCounts, data.targetProgress);
+          updateUIElements(data.stats, data.levelCounts);
           updateWordBadge(data.question);
           currentWordId = data.question.id;
           let qHTML = data.question.ja;
@@ -274,8 +284,8 @@
           questionText.innerHTML = qHTML;
           resultMessage.innerText = "";
         } else if (data.status === "success" && !data.question) {
-          updateUIElements(data.stats, data.levelCounts, data.targetProgress);
-          showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0, data.isDailyLimitReached);
+          updateUIElements(data.stats, data.levelCounts);
+          showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0);
         }
       })
       .catch(err => {
@@ -290,6 +300,12 @@
         resultMessage.style.color = data.isCorrect ? "#28a745" : "#dc3545";
         resultMessage.innerText = data.message;
         btnNext.style.display = "inline-block";
+
+        if (data.isCorrect && data.isTargetWord) {
+          sessionCorrectCount++;
+          updateSessionProgressUI();
+        }
+
         if (!data.isCorrect) {
           isShowingAnswer = true;
           btnSend.disabled = true;
@@ -323,15 +339,9 @@
     });
 
     let chartInstance = null;
-    function showFinishScreen(currentMasteredCount, isDailyLimitReached) {
+    function showFinishScreen(currentMasteredCount) {
       document.getElementById('quiz-area').style.display = 'none';
       document.getElementById('finish-screen').style.display = 'block';
-
-      if (isDailyLimitReached) {
-        document.getElementById('btn-finish-more').style.display = 'none';
-      } else {
-        document.getElementById('btn-finish-more').style.display = 'inline-block';
-      }
 
       if (typeof Chart === 'undefined') return;
 
@@ -379,15 +389,16 @@
       });
     }
 
-    // 「おかわり！」ボタン押下時の処理
+    // 「おかわり！」ボタン：カウントを0にリセットして次の20問へ即座に開始
     document.getElementById('btn-finish-more').addEventListener('click', () => {
-      sessionOffset += 20; // 次の20問へオフセットを加算
+      sessionCorrectCount = 0;
+      updateSessionProgressUI();
       document.getElementById('finish-screen').style.display = 'none';
       document.getElementById('quiz-area').style.display = 'block';
       loadNextQuestion();
     });
 
-    // 「おしまい」ボタン押下時の処理
+    // 「おしまい」ボタン：ログイン画面に戻る
     document.getElementById('btn-finish-exit').addEventListener('click', () => {
       document.getElementById('app-screen').style.display = 'none';
       document.getElementById('finish-screen').style.display = 'none';
