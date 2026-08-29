@@ -77,11 +77,11 @@
 
     <!-- レベル別単語数バッジ -->
     <div id="level-badges">
-      <span class="badge badge-unlearned" id="badge-unlearned-container">未着手: <span id="count-unlearned">0</span></span>
-      <span class="badge badge-lv1" id="badge-lv1-container">Lv.1: <span id="count-lv1">0</span></span>
-      <span class="badge badge-lv2" id="badge-lv2-container">Lv.2: <span id="count-lv2">0</span></span>
-      <span class="badge badge-lv3" id="badge-lv3-container">Lv.3: <span id="count-lv3">0</span></span>
-      <span class="badge badge-master" id="badge-master-container">🏆マスター: <span id="count-mastered">0</span></span>
+      <span class="badge badge-unlearned">未着手: <span id="count-unlearned">0</span></span>
+      <span class="badge badge-lv1">Lv.1: <span id="count-lv1">0</span></span>
+      <span class="badge badge-lv2">Lv.2: <span id="count-lv2">0</span></span>
+      <span class="badge badge-lv3">Lv.3: <span id="count-lv3">0</span></span>
+      <span class="badge badge-master">🏆マスター: <span id="count-mastered">0</span></span>
     </div>
 
     <!-- 20問目標プログレスバー -->
@@ -133,13 +133,14 @@
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbw1OSCjQ60o1_vwiiT7jG8bVnGrMiLwMRTNNNafJdU14EIc66teJn4L_DTE_65EWvUu/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxflvD3PtxQfcRA5esbCJyUfXCCPFZ2b5BDaHb2c4Zxv8Nf1y7USrEKqW_HwpXKCvvL/exec";
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
     let isShowingAnswer = false;
-    let sessionCorrectCount = 0;
+    let sessionCorrectCount = 0; // 画面側で20問のカウントを完全管理
     let latestMasteredCount = 0;
+    let hasMoreGlobal = true;
 
     document.querySelectorAll('.user-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -151,6 +152,7 @@
     function login(name) {
       currentUser = name;
       sessionCorrectCount = 0;
+      hasMoreGlobal = true;
       updateSessionProgressUI();
       document.getElementById('display-name').innerText = name;
       document.getElementById('login-screen').style.display = 'none';
@@ -237,8 +239,9 @@
     };
 
     const loadNextQuestion = () => {
+      // 画面側で20問達成を検知したらサーバーにリクエストせず即完了画面へ
       if (sessionCorrectCount >= 20) {
-        showFinishScreen(latestMasteredCount);
+        showFinishScreen(latestMasteredCount, hasMoreGlobal);
         return;
       }
 
@@ -283,8 +286,10 @@
           questionText.innerHTML = qHTML;
           resultMessage.innerText = "";
         } else if (data.status === "success" && !data.question) {
+          // すべての単語が尽きた場合
+          hasMoreGlobal = false;
           updateUIElements(data.stats, data.levelCounts);
-          showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0);
+          showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0, false);
         }
       })
       .catch(err => {
@@ -300,7 +305,6 @@
         resultMessage.innerText = data.message;
         btnNext.style.display = "inline-block";
 
-        // ★正解・不正解にかかわらず、ここで即座に上部のステータス（レベル別単語数・EXPなど）を更新！
         if (data.stats || data.levelCounts) {
           updateUIElements(data.stats, data.levelCounts);
         }
@@ -343,26 +347,27 @@
     });
 
     let chartInstance = null;
-    function showFinishScreen(currentMasteredCount) {
+    function showFinishScreen(currentMasteredCount, hasMoreWords) {
       document.getElementById('quiz-area').style.display = 'none';
       document.getElementById('finish-screen').style.display = 'block';
+
+      if (hasMoreWords !== false) {
+        document.getElementById('btn-finish-more').style.display = 'inline-block';
+      } else {
+        document.getElementById('btn-finish-more').style.display = 'none';
+        document.getElementById('finish-msg').innerText = "すべての出題可能単語をクリアしました！全問制覇です！";
+      }
 
       if (typeof Chart === 'undefined') return;
 
       const ctxChart = document.getElementById('progressChart').getContext('2d');
       
       let maxScale = 100;
-      if (currentMasteredCount > 600) {
-        maxScale = 1800;
-      } else if (currentMasteredCount > 300) {
-        maxScale = 600;
-      } else if (currentMasteredCount > 100) {
-        maxScale = 300;
-      } else if (currentMasteredCount > 50) {
-        maxScale = 100;
-      } else {
-        maxScale = 50; 
-      }
+      if (currentMasteredCount > 600) maxScale = 1800;
+      else if (currentMasteredCount > 300) maxScale = 600;
+      else if (currentMasteredCount > 100) maxScale = 300;
+      else if (currentMasteredCount > 50) maxScale = 100;
+      else maxScale = 50; 
 
       const labels = ["8月", "9月末", "10月末", "11/30 (ゴール)"];
       const idealPace = [0, 600, 1200, 1800];
@@ -420,6 +425,7 @@
       });
     }
 
+    // 「おかわり！」ボタン：カウントを0にリセットして次の20問へ即座に開始（無限ループ可能）
     document.getElementById('btn-finish-more').addEventListener('click', () => {
       sessionCorrectCount = 0;
       updateSessionProgressUI();
@@ -428,6 +434,7 @@
       loadNextQuestion();
     });
 
+    // 「おしまい」ボタン：ログイン画面に戻る
     document.getElementById('btn-finish-exit').addEventListener('click', () => {
       document.getElementById('app-screen').style.display = 'none';
       document.getElementById('finish-screen').style.display = 'none';
