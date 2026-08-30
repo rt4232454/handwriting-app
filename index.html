@@ -77,11 +77,11 @@
 
     <!-- レベル別単語数バッジ -->
     <div id="level-badges">
-      <span class="badge badge-unlearned">未着手: <span id="count-unlearned">0</span></span>
-      <span class="badge badge-lv1">Lv.1: <span id="count-lv1">0</span></span>
-      <span class="badge badge-lv2">Lv.2: <span id="count-lv2">0</span></span>
-      <span class="badge badge-lv3">Lv.3: <span id="count-lv3">0</span></span>
-      <span class="badge badge-master">🏆マスター: <span id="count-mastered">0</span></span>
+      <span class="badge badge-unlearned" id="badge-unlearned-container">未着手: <span id="count-unlearned">0</span></span>
+      <span class="badge badge-lv1" id="badge-lv1-container">Lv.1: <span id="count-lv1">0</span></span>
+      <span class="badge badge-lv2" id="badge-lv2-container">Lv.2: <span id="count-lv2">0</span></span>
+      <span class="badge badge-lv3" id="badge-lv3-container">Lv.3: <span id="count-lv3">0</span></span>
+      <span class="badge badge-master" id="badge-master-container">🏆マスター: <span id="count-mastered">0</span></span>
     </div>
 
     <!-- 20問目標プログレスバー -->
@@ -133,7 +133,7 @@
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbxflvD3PtxQfcRA5esbCJyUfXCCPFZ2b5BDaHb2c4Zxv8Nf1y7USrEKqW_HwpXKCvvL/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxqZj4kEi7vrZdpX7pgukrkJU-6atNr0Dr0bJrI4IRy3sqOKE3YMuD6CiIeqrJ-gwcB/exec";
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
