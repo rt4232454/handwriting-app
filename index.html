@@ -148,7 +148,7 @@
   </div>
 
   <script>
-    const GAS_URL = "ここに最新のGASのURLを貼り付けてください";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxqZj4kEi7vrZdpX7pgukrkJU-6atNr0Dr0bJrI4IRy3sqOKE3YMuD6CiIeqrJ-gwcB/exec";
     let currentUser = "";
     let currentWordId = null;
     let currentSpeechText = "";
@@ -216,7 +216,6 @@
     canvas.addEventListener('touchend', () => { isDrawing = false; ctx.closePath(); });
     document.getElementById('btn-clear').addEventListener('click', () => { initCanvas(); if (!isShowingAnswer) resultMessage.innerText = ""; });
 
-    // 画像軽量化：余白を自動トリミングしてJPEG圧縮
     function getOptimizedImageBase64() {
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imgData.data;
@@ -226,7 +225,6 @@
       for (let y = 0; y < canvas.height; y++) {
         for (let x = 0; x < canvas.width; x++) {
           const idx = (y * canvas.width + x) * 4;
-          // 白(255)以外のピクセル（文字が書かれている領域）を検出
           if (data[idx] < 200 || data[idx+1] < 200 || data[idx+2] < 200) {
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
@@ -252,29 +250,27 @@
       cropCanvas.height = cropHeight;
       const cropCtx = cropCanvas.getContext("2d");
       
-      // 白背景で塗りつぶしてから切り出し描画
       cropCtx.fillStyle = "#ffffff";
       cropCtx.fillRect(0, 0, cropWidth, cropHeight);
       cropCtx.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
 
-      // JPEG品質0.8で圧縮して容量を最小化
       return cropCanvas.toDataURL("image/jpeg", 0.8);
     }
 
-    // 自動リトライ機能付き fetch
+    // 自動リトライ付き fetch（GASリダイレクトに完全対応）
     async function fetchWithRetry(url, options, maxRetries = 2) {
       for (let i = 0; i <= maxRetries; i++) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 18000); // 18秒タイムアウト
-          const res = await fetch(url, { ...options, credentials: 'omit', signal: controller.signal });
+          const timeoutId = setTimeout(() => controller.abort(), 18000);
+          const res = await fetch(url, { ...options, redirect: 'follow', signal: controller.signal });
           clearTimeout(timeoutId);
           if (!res.ok) throw new Error("HTTP error " + res.status);
           return await res.json();
         } catch (err) {
           if (i === maxRetries) throw err;
           evalStatusText.innerText = `🔄 接続を再試行中... (${i + 1}/${maxRetries})`;
-          await new Promise(r => setTimeout(r, 1200)); // 1.2秒待って再試行
+          await new Promise(r => setTimeout(r, 1200));
         }
       }
     }
@@ -401,7 +397,6 @@
       }
     };
 
-    // 判定中の進捗ゲージ制御
     function startEvalProgress() {
       evalProgressContainer.style.display = "block";
       evalBarFill.style.width = "10%";
