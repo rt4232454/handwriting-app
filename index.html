@@ -48,11 +48,11 @@
     .btn-read { background-color: #17a2b8; }
     .btn-next { background-color: #28a745; display: none; width: 100%; margin-top: 8px; }
 
-    /* 判定中アニメーション */
-    #eval-progress-container { display: none; margin: 10px auto 4px auto; max-width: 400px; }
-    #eval-status-text { font-size: 0.9rem; font-weight: bold; color: #0056b3; margin-bottom: 4px; }
-    .eval-bar-bg { background-color: #e9ecef; border-radius: 10px; height: 8px; overflow: hidden; }
-    .eval-bar-fill { background-color: #007bff; height: 100%; width: 0%; transition: width 0.3s ease; }
+    /* 進捗プログレスバー（問題取得中 ＆ 判定中 共通） */
+    #action-progress-container { display: none; margin: 10px auto 4px auto; max-width: 400px; }
+    #action-status-text { font-size: 0.9rem; font-weight: bold; color: #0056b3; margin-bottom: 4px; }
+    .action-bar-bg { background-color: #e9ecef; border-radius: 10px; height: 8px; overflow: hidden; }
+    .action-bar-fill { background-color: #007bff; height: 100%; width: 0%; transition: width 0.3s ease; }
 
     #result-message { margin-top: 8px; font-size: 1rem; font-weight: bold; white-space: pre-wrap; }
 
@@ -120,11 +120,11 @@
       </div>
       <button class="btn btn-next" id="btn-next">次の問題へ ＞</button>
 
-      <!-- 判定進捗プログレスバー -->
-      <div id="eval-progress-container">
-        <div id="eval-status-text">📤 判定中...</div>
-        <div class="eval-bar-bg">
-          <div class="eval-bar-fill" id="eval-bar-fill"></div>
+      <!-- 進捗プログレスバー -->
+      <div id="action-progress-container">
+        <div id="action-status-text">通信中...</div>
+        <div class="action-bar-bg">
+          <div class="action-bar-fill" id="action-bar-fill"></div>
         </div>
       </div>
       
@@ -156,7 +156,7 @@
     let sessionCorrectCount = 0;
     let latestMasteredCount = 0;
     let hasMoreGlobal = true;
-    let evalInterval = null;
+    let progressTimer = null;
 
     document.querySelectorAll('.user-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -186,9 +186,9 @@
     const btnSend = document.getElementById('btn-send');
     const btnRead = document.getElementById('btn-read');
     const btnNext = document.getElementById('btn-next');
-    const evalProgressContainer = document.getElementById('eval-progress-container');
-    const evalStatusText = document.getElementById('eval-status-text');
-    const evalBarFill = document.getElementById('eval-bar-fill');
+    const actionProgressContainer = document.getElementById('action-progress-container');
+    const actionStatusText = document.getElementById('action-status-text');
+    const actionBarFill = document.getElementById('action-bar-fill');
 
     let isDrawing = false;
     const initCanvas = () => {
@@ -216,15 +216,14 @@
     canvas.addEventListener('touchend', () => { isDrawing = false; ctx.closePath(); });
     document.getElementById('btn-clear').addEventListener('click', () => { initCanvas(); if (!isShowingAnswer) resultMessage.innerText = ""; });
 
-    // 安全・確実なJPEG圧縮（トリミングによる不具合を防止）
     function getOptimizedImageBase64() {
       return canvas.toDataURL("image/jpeg", 0.6);
     }
 
-    // 安定通信リクエスト（12秒タイムアウト）
+    // タイムアウトを20秒に設定
     async function safePost(data) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
       try {
         const res = await fetch(GAS_URL, {
           method: "POST",
@@ -238,6 +237,33 @@
         clearTimeout(timeoutId);
         throw err;
       }
+    }
+
+    // 進捗ゲージアニメーション
+    function startProgress(steps) {
+      actionProgressContainer.style.display = "block";
+      actionBarFill.style.width = "10%";
+      actionStatusText.innerText = steps[0].text;
+      
+      let currentIdx = 0;
+      let width = 10;
+      progressTimer = setInterval(() => {
+        width += 8;
+        if (currentIdx < steps.length - 1 && width >= steps[currentIdx + 1].threshold) {
+          currentIdx++;
+          actionStatusText.innerText = steps[currentIdx].text;
+        }
+        actionBarFill.style.width = Math.min(92, width) + "%";
+      }, 250);
+    }
+
+    function stopProgress() {
+      if (progressTimer) clearInterval(progressTimer);
+      actionBarFill.style.width = "100%";
+      setTimeout(() => {
+        actionProgressContainer.style.display = "none";
+        actionBarFill.style.width = "0%";
+      }, 200);
     }
 
     function updateSessionProgressUI() {
@@ -288,20 +314,29 @@
       }
 
       isShowingAnswer = false;
-      resultMessage.innerText = "問題取得中...";
-      resultMessage.style.color = "#333";
+      resultMessage.innerText = "";
       questionText.innerText = "...";
       wordBadge.innerText = "問題取得中...";
       btnNext.style.display = "none";
-      btnSend.disabled = false;
-      btnRead.disabled = false;
+      btnSend.disabled = true;
+      btnRead.disabled = true;
       initCanvas();
       currentSpeechText = "";
 
+      // 問題取得時の進捗表示
+      startProgress([
+        { threshold: 10, text: "📡 サーバーに接続中..." },
+        { threshold: 40, text: "📚 今日の最適問題を選出中..." },
+        { threshold: 75, text: "✨ まもなくスタート！" }
+      ]);
+
       try {
         const data = await safePost({ action: "get_question", userName: currentUser });
+        stopProgress();
 
         if (data.status === "success" && data.question) {
+          btnSend.disabled = false;
+          btnRead.disabled = false;
           updateUIElements(data.stats, data.levelCounts);
           updateWordBadge(data.question);
           currentWordId = data.question.id;
@@ -329,14 +364,20 @@
           showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0, false);
         }
       } catch (err) {
-        resultMessage.innerText = "通信が混み合っています。もう一度ログインするか再読み込みしてください。";
+        stopProgress();
+        resultMessage.innerText = "通信が混み合っています。「問題を取得する」を押してください。";
         resultMessage.style.color = "#dc3545";
+        btnNext.style.display = "inline-block";
+        btnNext.innerText = "問題を取得する";
       }
     };
-    btnNext.addEventListener('click', loadNextQuestion);
+    btnNext.addEventListener('click', () => {
+      btnNext.innerText = "次の問題へ ＞";
+      loadNextQuestion();
+    });
 
     const handleResult = (data) => {
-      stopEvalProgress();
+      stopProgress();
       if (data.status === "success") {
         resultMessage.style.color = data.isCorrect ? "#28a745" : "#dc3545";
         resultMessage.innerText = data.message;
@@ -358,40 +399,19 @@
       }
     };
 
-    function startEvalProgress() {
-      evalProgressContainer.style.display = "block";
-      evalBarFill.style.width = "15%";
-      evalStatusText.innerText = "📤 送信中...";
-      
-      let step = 15;
-      evalInterval = setInterval(() => {
-        if (step < 60) {
-          step += 15;
-          evalStatusText.innerText = "🤖 AI認識中...";
-        } else if (step < 85) {
-          step += 5;
-          evalStatusText.innerText = "🔍 答え合わせ中...";
-        }
-        evalBarFill.style.width = Math.min(90, step) + "%";
-      }, 300);
-    }
-
-    function stopEvalProgress() {
-      if (evalInterval) clearInterval(evalInterval);
-      evalBarFill.style.width = "100%";
-      setTimeout(() => {
-        evalProgressContainer.style.display = "none";
-        evalBarFill.style.width = "0%";
-      }, 200);
-    }
-
     btnSend.addEventListener('click', async () => {
       if (!currentWordId || isShowingAnswer) return;
       
       resultMessage.innerText = "";
       btnSend.disabled = true;
       btnRead.disabled = true;
-      startEvalProgress();
+
+      // 判定時の進捗表示
+      startProgress([
+        { threshold: 10, text: "📤 画像を送信中..." },
+        { threshold: 40, text: "🤖 AI認識中..." },
+        { threshold: 75, text: "🔍 答え合わせ中..." }
+      ]);
 
       try {
         const data = await safePost({
@@ -402,7 +422,7 @@
         });
         handleResult(data);
       } catch (err) {
-        stopEvalProgress();
+        stopProgress();
         resultMessage.innerText = "判定通信に失敗しました。もう一度「書いた！」を押してください。";
         resultMessage.style.color = "#dc3545";
         btnSend.disabled = false;
