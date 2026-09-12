@@ -15,7 +15,7 @@
     
     /* レベル別単語数バッジ */
     #level-badges { display: flex; justify-content: center; gap: 6px; margin: 8px 0; font-size: 0.75rem; flex-wrap: wrap; }
-    .badge { padding: 4px 8px; border-radius: 12px; font-weight: bold; color: white; transition: transform 0.2s ease; }
+    .badge { padding: 4px 8px; border-radius: 12px; font-weight: bold; color: white; }
     .badge-unlearned { background-color: #8e9aaf; }
     .badge-lv1 { background-color: #48cae4; }
     .badge-lv2 { background-color: #0096c7; }
@@ -48,11 +48,11 @@
     .btn-read { background-color: #17a2b8; }
     .btn-next { background-color: #28a745; display: none; width: 100%; margin-top: 8px; }
 
-    /* 進捗プログレスバー */
+    /* 通信アニメーションバー */
     #action-progress-container { display: none; margin: 10px auto 4px auto; max-width: 400px; }
     #action-status-text { font-size: 0.9rem; font-weight: bold; color: #0056b3; margin-bottom: 4px; }
     .action-bar-bg { background-color: #e9ecef; border-radius: 10px; height: 8px; overflow: hidden; }
-    .action-bar-fill { background-color: #007bff; height: 100%; width: 0%; transition: width 0.3s ease; }
+    .action-bar-fill { background-color: #007bff; height: 100%; width: 0%; transition: width 0.2s ease; }
 
     #result-message { margin-top: 8px; font-size: 1rem; font-weight: bold; white-space: pre-wrap; }
 
@@ -120,7 +120,7 @@
       </div>
       <button class="btn btn-next" id="btn-next">次の問題へ ＞</button>
 
-      <!-- 進捗プログレスバー -->
+      <!-- 通信アニメーションバー -->
       <div id="action-progress-container">
         <div id="action-status-text">通信中...</div>
         <div class="action-bar-bg">
@@ -216,44 +216,17 @@
     canvas.addEventListener('touchend', () => { isDrawing = false; ctx.closePath(); });
     document.getElementById('btn-clear').addEventListener('click', () => { initCanvas(); if (!isShowingAnswer) resultMessage.innerText = ""; });
 
-    function getOptimizedImageBase64() {
-      return canvas.toDataURL("image/jpeg", 0.6);
-    }
-
-    // タイムアウトを30秒に拡大
-    async function safePost(data) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      try {
-        const res = await fetch(GAS_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify(data),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        return await res.json();
-      } catch (err) {
-        clearTimeout(timeoutId);
-        throw err;
-      }
-    }
-
-    function startProgress(steps) {
+    function startProgress(text) {
       actionProgressContainer.style.display = "block";
-      actionBarFill.style.width = "10%";
-      actionStatusText.innerText = steps[0].text;
+      actionBarFill.style.width = "20%";
+      actionStatusText.innerText = text;
       
-      let currentIdx = 0;
-      let width = 10;
+      let width = 20;
+      if (progressTimer) clearInterval(progressTimer);
       progressTimer = setInterval(() => {
-        width += 6;
-        if (currentIdx < steps.length - 1 && width >= steps[currentIdx + 1].threshold) {
-          currentIdx++;
-          actionStatusText.innerText = steps[currentIdx].text;
-        }
-        actionBarFill.style.width = Math.min(92, width) + "%";
-      }, 250);
+        width = Math.min(90, width + 5);
+        actionBarFill.style.width = width + "%";
+      }, 200);
     }
 
     function stopProgress() {
@@ -262,7 +235,7 @@
       setTimeout(() => {
         actionProgressContainer.style.display = "none";
         actionBarFill.style.width = "0%";
-      }, 200);
+      }, 150);
     }
 
     function updateSessionProgressUI() {
@@ -306,7 +279,7 @@
       }
     };
 
-    const loadNextQuestion = async () => {
+    const loadNextQuestion = () => {
       if (sessionCorrectCount >= 20) {
         showFinishScreen(latestMasteredCount, hasMoreGlobal);
         return;
@@ -322,16 +295,16 @@
       initCanvas();
       currentSpeechText = "";
 
-      startProgress([
-        { threshold: 10, text: "📡 サーバーに接続中..." },
-        { threshold: 40, text: "📚 今日の最適問題を選出中..." },
-        { threshold: 75, text: "✨ まもなくスタート！" }
-      ]);
+      startProgress("📡 今日の問題を取得中...");
 
-      try {
-        const data = await safePost({ action: "get_question", userName: currentUser });
+      fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ action: "get_question", userName: currentUser })
+      })
+      .then(res => res.json())
+      .then(data => {
         stopProgress();
-
         if (data.status === "success" && data.question) {
           btnSend.disabled = false;
           btnRead.disabled = false;
@@ -360,14 +333,17 @@
           hasMoreGlobal = false;
           updateUIElements(data.stats, data.levelCounts);
           showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0, false);
+        } else {
+          throw new Error(data.message || "取得エラー");
         }
-      } catch (err) {
+      })
+      .catch(err => {
         stopProgress();
         resultMessage.innerText = "通信が混み合っています。「問題を取得する」を押してください。";
         resultMessage.style.color = "#dc3545";
         btnNext.style.display = "inline-block";
         btnNext.innerText = "問題を取得する";
-      }
+      });
     };
     btnNext.addEventListener('click', () => {
       btnNext.innerText = "次の問題へ ＞";
@@ -395,41 +371,44 @@
           btnSend.disabled = true;
         }
       } else {
-        resultMessage.innerText = "サーバーエラーが発生しました: " + (data.message || "");
+        resultMessage.innerText = "サーバーエラー: " + (data.message || "");
         resultMessage.style.color = "#dc3545";
         btnSend.disabled = false;
         btnRead.disabled = false;
       }
     };
 
-    btnSend.addEventListener('click', async () => {
+    btnSend.addEventListener('click', () => {
       if (!currentWordId || isShowingAnswer) return;
       
       resultMessage.innerText = "";
       btnSend.disabled = true;
       btnRead.disabled = true;
 
-      startProgress([
-        { threshold: 10, text: "📤 画像を送信中..." },
-        { threshold: 40, text: "🤖 AI認識中..." },
-        { threshold: 75, text: "🔍 答え合わせ中..." }
-      ]);
+      startProgress("🤖 AIが判定中...");
 
-      try {
-        const data = await safePost({
+      // 超軽量JPEG（0.7）で送信
+      const base64 = canvas.toDataURL("image/jpeg", 0.7);
+
+      fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
           action: "submit_answer",
           userName: currentUser,
           wordId: currentWordId,
-          imageBase64: getOptimizedImageBase64()
-        });
-        handleResult(data);
-      } catch (err) {
+          imageBase64: base64
+        })
+      })
+      .then(res => res.json())
+      .then(handleResult)
+      .catch(err => {
         stopProgress();
         resultMessage.innerText = "判定通信に失敗しました。もう一度「書いた！」を押してください。";
         resultMessage.style.color = "#dc3545";
         btnSend.disabled = false;
         btnRead.disabled = false;
-      }
+      });
     });
 
     let chartInstance = null;
