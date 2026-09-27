@@ -55,6 +55,9 @@
     .action-bar-fill { background-color: #007bff; height: 100%; width: 0%; transition: width 0.2s ease; }
 
     #result-message { margin-top: 8px; font-size: 1rem; font-weight: bold; white-space: pre-wrap; }
+    
+    /* 診断・トラブルシューティング情報 */
+    #debug-diag-box { font-size: 0.72rem; color: #666; margin-top: 6px; padding: 4px 8px; background: #eef1f6; border-radius: 4px; display: none; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto; line-height: 1.4; word-break: break-all; }
 
     /* 学習完了画面・グラフ */
     #finish-screen { display: none; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-top: 15px; }
@@ -129,6 +132,8 @@
       </div>
       
       <div id="result-message"></div>
+      <!-- 診断レポート欄 -->
+      <div id="debug-diag-box"></div>
     </div>
 
     <!-- 学習完了画面 & グラフ -->
@@ -158,7 +163,6 @@
     let hasMoreGlobal = true;
     let progressTimer = null;
 
-    // ローカルストレージ（セーブ機能）のヘルパー
     const saveProgress = () => {
       if (!currentUser) return;
       localStorage.setItem(`vocab_session_${currentUser}`, sessionCorrectCount);
@@ -184,7 +188,6 @@
 
     function login(name) {
       currentUser = name;
-      // 前回の途中経過があれば復元
       sessionCorrectCount = loadSavedProgress();
       hasMoreGlobal = true;
       updateSessionProgressUI();
@@ -199,6 +202,7 @@
     const canvas = document.getElementById('draw-area');
     const ctx = canvas.getContext('2d');
     const resultMessage = document.getElementById('result-message');
+    const debugDiagBox = document.getElementById('debug-diag-box');
     const questionText = document.getElementById('question-text');
     const wordBadge = document.getElementById('word-badge');
     const btnSend = document.getElementById('btn-send');
@@ -232,7 +236,18 @@
     canvas.addEventListener('touchstart', (e) => { e.preventDefault(); isDrawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); }, {passive: false});
     canvas.addEventListener('touchmove', (e) => { if (!isDrawing) return; e.preventDefault(); const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); }, {passive: false});
     canvas.addEventListener('touchend', () => { isDrawing = false; ctx.closePath(); });
-    document.getElementById('btn-clear').addEventListener('click', () => { initCanvas(); if (!isShowingAnswer) resultMessage.innerText = ""; });
+    document.getElementById('btn-clear').addEventListener('click', () => { 
+      initCanvas(); 
+      if (!isShowingAnswer) {
+        resultMessage.innerText = "";
+        debugDiagBox.style.display = "none";
+      }
+    });
+
+    function showDiag(text) {
+      debugDiagBox.style.display = "block";
+      debugDiagBox.innerText = text;
+    }
 
     function startProgress(text) {
       actionProgressContainer.style.display = "block";
@@ -306,6 +321,7 @@
 
       isShowingAnswer = false;
       resultMessage.innerText = "";
+      debugDiagBox.style.display = "none";
       questionText.innerText = "...";
       wordBadge.innerText = "問題取得中...";
       btnNext.style.display = "none";
@@ -315,6 +331,7 @@
       currentSpeechText = "";
 
       startProgress("📡 今日の問題を取得中...");
+      const clientStart = new Date().getTime();
 
       fetch(GAS_URL, {
         method: "POST",
@@ -324,6 +341,8 @@
       .then(res => res.json())
       .then(data => {
         stopProgress();
+        const clientRoundTrip = new Date().getTime() - clientStart;
+
         if (data.status === "success" && data.question) {
           btnSend.disabled = false;
           btnRead.disabled = false;
@@ -354,15 +373,17 @@
           updateUIElements(data.stats, data.levelCounts);
           showFinishScreen(data.levelCounts ? data.levelCounts.mastered : 0, false);
         } else {
-          throw new Error(data.message || "取得エラー");
+          throw new Error(data.message || "データ取得に失敗しました");
         }
       })
       .catch(err => {
         stopProgress();
+        const clientElapsed = new Date().getTime() - clientStart;
         resultMessage.innerText = "通信が混み合っています。「問題を取得する」を押してください。";
         resultMessage.style.color = "#dc3545";
         btnNext.style.display = "inline-block";
         btnNext.innerText = "問題を取得する";
+        showDiag(`[問題取得エラー診断] 経過時間: ${clientElapsed}ms\n原因: ${err.message || "GASレスポンスなし (CORS/オフライン/タイムアウト)"}`);
       });
     };
     btnNext.addEventListener('click', () => {
@@ -370,12 +391,16 @@
       loadNextQuestion();
     });
 
-    const handleResult = (data) => {
+    const handleResult = (data, clientRoundTrip) => {
       stopProgress();
       if (data.status === "success") {
         resultMessage.style.color = data.isCorrect ? "#28a745" : "#dc3545";
         resultMessage.innerText = data.message;
         btnNext.style.display = "inline-block";
+
+        if (data.timings) {
+          showDiag(`[通信診断レポート] 全体往復: ${clientRoundTrip}ms | GAS内合計: ${data.timings.totalGAS}ms (排他待機: ${data.timings.lockWait}ms / VisionAPI: ${data.timings.visionAPI}ms / シート書込: ${data.timings.sheetSave}ms)`);
+        }
 
         if (data.stats) {
           updateUIElements(data.stats, null);
@@ -383,7 +408,7 @@
 
         if (data.isCorrect && data.isTargetWord) {
           sessionCorrectCount++;
-          saveProgress(); // 1問正解ごとにセーブ
+          saveProgress();
           updateSessionProgressUI();
         }
 
@@ -394,6 +419,7 @@
       } else {
         resultMessage.innerText = "サーバーエラー: " + (data.message || "");
         resultMessage.style.color = "#dc3545";
+        showDiag(`[GAS内部エラー診断]\n${data.message || ""}\n${data.stack || ""}`);
         btnSend.disabled = false;
         btnRead.disabled = false;
       }
@@ -403,20 +429,23 @@
       if (!currentWordId || isShowingAnswer) return;
       
       resultMessage.innerText = "";
+      debugDiagBox.style.display = "none";
       btnSend.disabled = true;
       btnRead.disabled = true;
 
       startProgress("🤖 AIが判定中...");
+      const clientStart = new Date().getTime();
 
       const base64 = canvas.toDataURL("image/jpeg", 0.7);
 
-      // フリーズ防止：10秒で応答がなければボタンを自動復旧させるタイマー
       let isAnswerDone = false;
       const timeoutFallback = setTimeout(() => {
         if (!isAnswerDone) {
           stopProgress();
+          const elapsed = new Date().getTime() - clientStart;
           resultMessage.innerText = "通信が一時的に途切れました。もう一度「書いた！」を押してください。";
           resultMessage.style.color = "#dc3545";
+          showDiag(`[判定タイムアウト診断] ${elapsed}ms 経過してもサーバーからの応答がありませんでした。\n考えられる原因: Wi-Fi瞬断 / GAS起動コールドスタート待ち / Vision API混雑`);
           btnSend.disabled = false;
           btnRead.disabled = false;
         }
@@ -436,14 +465,17 @@
       .then(data => {
         isAnswerDone = true;
         clearTimeout(timeoutFallback);
-        handleResult(data);
+        const clientRoundTrip = new Date().getTime() - clientStart;
+        handleResult(data, clientRoundTrip);
       })
       .catch(err => {
         isAnswerDone = true;
         clearTimeout(timeoutFallback);
         stopProgress();
+        const elapsed = new Date().getTime() - clientStart;
         resultMessage.innerText = "判定通信に失敗しました。もう一度「書いた！」を押してください。";
         resultMessage.style.color = "#dc3545";
+        showDiag(`[通信エラー診断] 経過時間: ${elapsed}ms\nエラー詳細: ${err.message || "ネットワーク断またはCORSエラー"}`);
         btnSend.disabled = false;
         btnRead.disabled = false;
       });
